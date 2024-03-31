@@ -1,0 +1,87 @@
+#!/usr/bin/env ruby
+
+require 'pathname'
+module Archive
+  ONE_MONTH = 60 * 60 * 24 * 30
+
+  class Item
+    def initialize(path)
+      @path = path
+    end
+
+    def older?(edge)
+      !younger?(edge)
+    end
+
+    def younger?(edge)
+      (atime > edge) || (mtime > edge)
+    end
+
+    def atime = ::File.new(@path).atime
+    def mtime = ::File.new(@path).mtime
+
+    def archive
+      return if archive?
+
+      puts "Archiving #{@path}"
+      `mkdir -p #{archive_path}`
+      `cd #{dirname} && tar cf #{archive_path.join(basename)}.tar.gz #{basename}`
+      `rm -rf #{@path}`
+    end
+
+    def archive_path
+      dirname.join(".archive/#{Time.now.strftime('%Y%m')}")
+    end
+
+    def dirname = @path.dirname
+    def basename = @path.basename
+
+    def exists? = ::File.exist?(@path)
+
+    # is this folder is 'archive' ?
+    def archive?
+      ::File.basename(@path) == '.archive'
+    end
+  end
+
+  class File < Item
+  end
+
+  # Folder
+  class Folder < Item
+    def initialize(path)
+      @path = path
+    end
+
+    def items
+      Dir.new(@path).children.map do |name|
+        @path.join(name)
+      end.map do |path|
+        if ::File.file?(path)
+          File.new(path)
+        elsif ::File.directory?(path)
+          Folder.new(path)
+        end
+      end
+    end
+  end
+
+  # Archive
+  class Archive
+    def initialize(folder)
+      @folder = folder
+    end
+
+    def archive_older_than(edge)
+      @folder.items.each do |item|
+        next unless item.exists?
+
+        item.archive if item.older?(edge)
+      end
+    end
+  end
+end
+
+Archive::Archive.new(
+  Archive::Folder.new(Pathname.new(ARGV[0] || Dir.pwd))
+).archive_older_than(Time.now - Archive::ONE_MONTH)
